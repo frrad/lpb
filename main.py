@@ -5,6 +5,8 @@ from bs4 import BeautifulSoup, Tag
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Generator, List, cast
+import dataclasses
+import json
 import requests
 
 
@@ -128,4 +130,9 @@ def relevant(row: Course) -> bool:
 
 
 for course in filter(relevant, parse(get_page())):
-    print(course)
+    course_dict = dataclasses.asdict(course)
+    # datetime doesn't serialize so just remove it
+    del course_dict["start_time"]
+    del course_dict["end_time"]
+
+    print(json.dumps(course_dict, indent=2))
