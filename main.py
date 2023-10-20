@@ -124,9 +124,13 @@ def relevant(row: Course) -> bool:
     if row.location != "SB":
         return False
 
-    target_time = datetime.strptime("3:45pm", "%I:%M%p").time()
+    start_after_time = datetime.strptime("3:45pm", "%I:%M%p").time()
+    end_before_time = datetime.strptime("7:00pm", "%I:%M%p").time()
 
-    return row.start_time.time() > target_time
+    return (
+        row.start_time.time() > start_after_time
+        and row.start_time.time() < end_before_time
+    )
 
 
 for course in filter(relevant, parse(get_page())):
