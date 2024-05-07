@@ -134,10 +134,15 @@ def relevant(row: Course) -> bool:
     return correct_class and good_location and good_time and good_day
 
 
-for course in filter(relevant, parse(get_page())):
-    course_dict = dataclasses.asdict(course)
-    # datetime doesn't serialize so just remove it
-    del course_dict["start_time"]
-    del course_dict["end_time"]
+def main():
+    for course in filter(relevant, parse(get_page())):
+        course_dict = dataclasses.asdict(course)
+        # datetime doesn't serialize so just remove it
+        del course_dict["start_time"]
+        del course_dict["end_time"]
 
-    print(json.dumps(course_dict, indent=2))
+        print(json.dumps(course_dict, indent=2))
+
+
+if __name__ == "__main__":
+    main()
