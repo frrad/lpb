@@ -118,18 +118,21 @@ def parse(html: str) -> Generator[Course, None, None]:
 
 
 def relevant(row: Course) -> bool:
-    correct_class = "toddler" in row.class_name.lower()
+
+    correct_class = (
+        "level 2" in row.class_name.lower() and "ages 3" in row.class_name.lower()
+    )
 
     good_location = row.location == "SB"
 
-    start_after_time = datetime.strptime("3:45pm", "%I:%M%p").time()
-    end_before_time = datetime.strptime("7:00pm", "%I:%M%p").time()
+    start_after_time = datetime.strptime("5:00pm", "%I:%M%p").time()
+    end_before_time = datetime.strptime("7:30pm", "%I:%M%p").time()
     good_time = (
-        row.start_time.time() > start_after_time
-        and row.end_time.time() < end_before_time
+        row.start_time.time() >= start_after_time
+        and row.end_time.time() <= end_before_time
     )
 
-    good_day = row.days not in ["Sa"]
+    good_day = row.days not in ["Sa", "Su", "Th"]
 
     return correct_class and good_location and good_time and good_day
 
