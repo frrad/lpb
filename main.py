@@ -42,7 +42,15 @@ def get_page() -> str:
         "waitlistClasses": "",
     }
 
-    response = requests.get(base_url, params=params)
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/139.0.0.0 Safari/537.36"
+        )
+    }
+
+    response = requests.get(base_url, params=params, headers=headers)
     response.raise_for_status()
     return response.text
 
