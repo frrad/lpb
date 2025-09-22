@@ -1,13 +1,17 @@
 # pyright:strict
+from __future__ import annotations
 
 
 from bs4 import BeautifulSoup, Tag
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Generator, List, cast
+from dataclasses import dataclass
+from datetime import datetime, time
+from pathlib import Path
+from typing import Generator, List, cast, TypedDict
 import dataclasses
 import json
 import requests
+import yaml
 
 
 @dataclass
@@ -125,28 +129,91 @@ def parse(html: str) -> Generator[Course, None, None]:
         yield extract_course_data(row)
 
 
-def relevant(row: Course) -> bool:
+class ClassRules(TypedDict, total=False):
+    name_includes: List[str]
+    location_equals: str
 
-    correct_class = (
-        "level 2" in row.class_name.lower() and "ages 3" in row.class_name.lower()
+
+class ScheduleRules(TypedDict):
+    # 12-hour strings like "5:00pm" (default format below)
+    start_after: str
+    end_before: str
+    exclude_days: List[str]
+    # optional override, default "%I:%M%p"
+    time_format: str
+
+
+class ConfigDict(TypedDict, total=False):
+    class_rules: ClassRules
+    instructors: List[str]  # lowercase in config for simplicity
+    schedule: ScheduleRules
+
+
+@dataclass(frozen=True)
+class Config:
+    name_includes: List[str]
+    location_equals: str | None
+    instructors: List[str]
+    start_after: time
+    end_before: time
+    exclude_days: List[str]
+
+    @staticmethod
+    def from_yaml(path: str | Path) -> "Config":
+        raw: ConfigDict = yaml.safe_load(Path(path).read_text())
+
+        class_rules = raw.get("class_rules", {})
+        schedule = raw.get("schedule", {})
+
+        tfmt = schedule.get("time_format", "%I:%M%p")
+        start_after = datetime.strptime(schedule["start_after"], tfmt).time()
+        end_before = datetime.strptime(schedule["end_before"], tfmt).time()
+
+        return Config(
+            name_includes=[s.lower() for s in class_rules.get("name_includes", [])],
+            location_equals=class_rules.get("location_equals"),
+            instructors=[s.lower() for s in raw.get("instructors", [])],
+            start_after=start_after,
+            end_before=end_before,
+            exclude_days=schedule.get("exclude_days", []),
+        )
+
+
+def relevant(row: Course, cfg: Config) -> bool:
+    # class name checks (all tokens must be found)
+    class_lc = row.class_name.lower()
+    correct_class = all(token in class_lc for token in cfg.name_includes)
+
+    # location (optional)
+    good_location = True
+    if cfg.location_equals is not None:
+        good_location = row.location == cfg.location_equals
+
+    # instructor (any allowed matches, case-insensitive)
+    instr_lc = row.instructor.lower()
+    good_instructor = any(name in instr_lc for name in cfg.instructors)
+
+    # time window
+    s_time = row.start_time.time()
+    e_time = row.end_time.time()
+    good_time = (s_time >= cfg.start_after) and (e_time <= cfg.end_before)
+
+    # day not excluded
+    good_day = row.days not in cfg.exclude_days
+
+    return (
+        correct_class and good_location and good_time and good_day and good_instructor
     )
-
-    good_location = row.location == "SB"
-
-    start_after_time = datetime.strptime("5:00pm", "%I:%M%p").time()
-    end_before_time = datetime.strptime("7:30pm", "%I:%M%p").time()
-    good_time = (
-        row.start_time.time() >= start_after_time
-        and row.end_time.time() <= end_before_time
-    )
-
-    good_day = row.days not in ["Sa", "Su", "Th"]
-
-    return correct_class and good_location and good_time and good_day
 
 
 def main():
-    for course in filter(relevant, parse(get_page())):
+
+    cfg = Config.from_yaml("course_rules.yaml")
+
+    for course in parse(get_page()):
+        if not relevant(course, cfg):
+            continue
+
         course_dict = dataclasses.asdict(course)
         # datetime doesn't serialize so just remove it
         del course_dict["start_time"]

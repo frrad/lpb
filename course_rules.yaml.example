@@ -1,0 +1,16 @@
+class_rules:
+  name_includes:
+    - "beginner"
+    - "ages 4-5"
+  location_equals: "Downtown"
+
+instructors:
+  - "faketeacher"
+  - "otherteacher"
+  - "idk"
+
+schedule:
+  start_after: "3:30pm"
+  end_before: "8:15pm"
+  exclude_days: ["Su"]
+  time_format: "%I:%M%p"
