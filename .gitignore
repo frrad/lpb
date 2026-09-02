@@ -1,3 +1,4 @@
 venv/
 /myenv/
 /course_rules.yaml
+__pycache__/

@@ -7,11 +7,30 @@ from dataclasses import dataclass
 from dataclasses import dataclass
 from datetime import datetime, time
 from pathlib import Path
-from typing import Generator, List, cast, TypedDict
+from typing import Generator, List, TypedDict
 import dataclasses
 import json
 import requests
+import sys
 import yaml
+
+
+# The openings page silently truncates its table at this many rows. A response
+# at exactly this length is a partial catalog, not a complete one.
+ROW_CAP = 500
+
+# Class-name prefixes used to split the catalog into under-cap queries. Every
+# class name at LPB starts with one of these.
+CNAME_TERMS = [
+    "Baby",
+    "Toddler",
+    "Level 1",
+    "Level 2",
+    "Level 3",
+    "Level 4",
+    "Level 5",
+    "Adult",
+]
 
 
 @dataclass
@@ -32,9 +51,11 @@ class Course:
     end_time: datetime
 
 
-def get_page() -> str:
+def get_page(cname: str = "") -> str:
+    """Fetch the openings table. `cname` filters server-side on class name."""
     base_url = "https://app.jackrabbitclass.com/webregopeningsv2.asp"
     params = {
+        "cname": cname,
         "searchpage": "29750",
         "rvcol": "0",
         "rtcol": "2",
@@ -121,12 +142,54 @@ def extract_course_data(row: Tag) -> Course:
 
 def parse(html: str) -> Generator[Course, None, None]:
     soup: BeautifulSoup = BeautifulSoup(html, "html.parser")
-    table = cast(Tag, soup.find("table", id="table-1"))
-    rows: List[Tag] = table.find("tbody").find_all("tr", class_="qweb-reg-openings-row")
+
+    # A query matching no classes renders the page without a results table.
+    table = soup.find("table", id="table-1")
+    if not isinstance(table, Tag):
+        return
+    body = table.find("tbody")
+    if not isinstance(body, Tag):
+        return
+
+    rows: List[Tag] = body.find_all("tr", class_="qweb-reg-openings-row")
 
     for row in rows:
         assert isinstance(row, Tag)
         yield extract_course_data(row)
+
+
+def course_key(course: Course) -> tuple[str, str, str, str, str]:
+    return (
+        course.location,
+        course.class_name,
+        course.days,
+        course.times,
+        course.instructor,
+    )
+
+
+def get_all_courses(terms: List[str] = CNAME_TERMS) -> List[Course]:
+    """Fetch the whole catalog.
+
+    A single unfiltered request is capped at ROW_CAP rows with no indication
+    that it truncated, so ask for one class-name prefix at a time and merge.
+    Prefixes overlap (a "Level 1/Level 2" class answers to both), hence the
+    dedupe.
+    """
+    found: dict[tuple[str, str, str, str, str], Course] = {}
+
+    for term in terms:
+        courses = list(parse(get_page(term)))
+        if len(courses) >= ROW_CAP:
+            print(
+                f"warning: query {term!r} returned {len(courses)} rows and hit the "
+                f"{ROW_CAP}-row cap; its results are incomplete",
+                file=sys.stderr,
+            )
+        for course in courses:
+            found[course_key(course)] = course
+
+    return list(found.values())
 
 
 class ClassRules(TypedDict, total=False):
@@ -210,7 +273,7 @@ def main():
 
     cfg = Config.from_yaml("course_rules.yaml")
 
-    for course in parse(get_page()):
+    for course in get_all_courses():
         if not relevant(course, cfg):
             continue
 
